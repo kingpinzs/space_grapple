@@ -354,7 +354,10 @@
 
         if (score > LEVEL_UP_SCORE * gameLevel && !wormhole) {
             sound.wormholeAppear();
-            wormhole = new Wormhole(screenWidth / 2, cameraY - 50);
+            // Spawn the wormhole relative to the player's current position
+            // rather than the camera position. This prevents it from appearing
+            // off screen when the camera lagged behind the player.
+            wormhole = new Wormhole(screenWidth / 2, player.y - screenHeight * 0.5);
         }
         
         if (levelUpMessage.timer > 0) levelUpMessage.timer -= deltaTime;
