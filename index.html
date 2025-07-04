@@ -109,8 +109,9 @@
     let score = 0, highScore = localStorage.getItem('galaxyGrappleHighScore') || 0;
     let cameraY = 0;
     let screenShake = { x: 0, y: 0, magnitude: 0, duration: 0 };
+    let gameLevel = 1;
 
-    // Game constants (v3.1 - Power-Up Update)
+    // Game constants (v3.2 - The Wormhole Update)
     const GRAVITY = 0.0011;
     const LAUNCH_POWER = 0.8;
     const ANCHOR_RADIUS_MIN = 15;
@@ -124,7 +125,8 @@
     const UNSTABLE_ASTEROID_LIFETIME = 2500;
     const BLACK_HOLE_PULL = 0.005;
     const CRYSTAL_SCORE = 5;
-    const ORB_BOOST_ADDITION = 500; // ms
+    const ORB_BOOST_ADDITION = 500;
+    const LEVEL_UP_SCORE = 500;
 
     // =================================================================
     // SOUND MANAGER
@@ -159,6 +161,8 @@
         uiClick: function() { this.play('uiClick', () => this.synth.triggerAttackRelease("C5", "32n")); },
         collectCrystal: function() { this.play('collect', () => this.polySynth.triggerAttackRelease(["C5", "E5", "G5"], "16n")); },
         collectOrb: function() { this.play('powerup', () => this.synth.triggerAttackRelease("A5", "8n")); },
+        wormholeAppear: function() { this.play('wormhole', () => this.synth.triggerAttackRelease("A2", "2n")); },
+        warp: function() { this.play('warp', () => this.noise.triggerAttackRelease("1n")); },
     };
 
     // =================================================================
@@ -182,49 +186,20 @@
         constructor(x, y, radius, type) { this.x = x; this.y = y; this.radius = radius; this.type = type; this.isTarget = false; this.isDestroyed = false; this.grappleTime = 0; this.movePhase = Math.random() * Math.PI * 2; if (this.type === 'unstable') this.shape = this.generateAsteroidShape(); if (this.type === 'normal') this.craters = this.generateCraters(); }
         onGrapple(player) { if (this.type === 'unstable') this.grappleTime = performance.now(); }
         update(deltaTime) { if (this.type === 'unstable' && this.grappleTime > 0) { if (performance.now() - this.grappleTime > UNSTABLE_ASTEROID_LIFETIME) { sound.crumble(); this.isDestroyed = true; createParticleBurst(this.x, this.y, 30, '#A5682A'); triggerScreenShake(10, 200); } } if (this.type === 'moving') { const speedMultiplier = 1 + (score / 2000); this.movePhase += deltaTime * 0.001 * speedMultiplier; this.x += Math.sin(this.movePhase) * 0.05 * deltaTime * speedMultiplier; } if (this.type === 'blackhole') { const dx = this.x - player.x; const dy = this.y - player.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist < this.radius * 6) { player.dx += (dx / dist) * BLACK_HOLE_PULL; player.dy += (dy / dist) * BLACK_HOLE_PULL; if (Math.random() < 0.2) createParticleBurst(player.x, player.y, 1, '#FFFFFF', true, this.x, this.y); } if (dist < this.radius) { triggerScreenShake(20, 500); player.y = cameraY + screenHeight + 100; } } }
-        draw() { if (this.isDestroyed) return; ctx.save(); ctx.translate(this.x, this.y - cameraY); const pulse = 1 + Math.sin(performance.now() / 150) * 0.1; ctx.shadowColor = this.isTarget ? '#FFFFFF' : '#00BFFF'; ctx.shadowBlur = this.isTarget ? 15 * pulse : 15; switch(this.type) { case 'bouncy': ctx.fillStyle = '#4CFFB1'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(0, 0, this.radius * 0.5, 0, Math.PI * 2); ctx.fill(); break; case 'unstable': ctx.fillStyle = '#A5682A'; const crumbleFactor = this.grappleTime > 0 ? 1 - (performance.now() - this.grappleTime) / UNSTABLE_ASTEROID_LIFETIME : 1; ctx.globalAlpha = crumbleFactor; ctx.translate(Math.random()*4*(1-crumbleFactor), Math.random()*4*(1-crumbleFactor)); ctx.beginPath(); this.shape.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }); ctx.closePath(); ctx.fill(); break; case 'blackhole': ctx.shadowBlur = 0; for(let i=0; i<10; i++) { ctx.beginPath(); ctx.arc(0, 0, this.radius * (i/10) * (1 + Math.sin(performance.now()/200 + i) * 0.1), 0, Math.PI*2); ctx.strokeStyle = `rgba(150, 50, 255, ${1 - i/10})`; ctx.lineWidth = 2; ctx.stroke(); } break; default: ctx.fillStyle = '#5B8FB9'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); this.craters.forEach(c => { ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fill(); }); } ctx.restore(); }
+        draw() { if (this.isDestroyed) return; ctx.save(); ctx.translate(this.x, this.y - cameraY); const pulse = 1 + Math.sin(performance.now() / 150) * 0.1; ctx.shadowColor = this.isTarget ? '#FFFFFF' : '#00BFFF'; ctx.shadowBlur = this.isTarget ? 15 * pulse : 15; switch(this.type) { case 'bouncy': ctx.fillStyle = '#4CFFB1'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(0, 0, this.radius * 0.5, 0, Math.PI * 2); ctx.fill(); break; case 'unstable': ctx.fillStyle = '#A5682A'; const crumbleFactor = this.grappleTime > 0 ? 1 - (performance.now() - this.grappleTime) / UNSTABLE_ASTEROID_LIFETIME : 1; ctx.globalAlpha = crumbleFactor; ctx.translate(Math.random()*4*(1-crumbleFactor), Math.random()*4*(1-crumbleFactor)); ctx.beginPath(); this.shape.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }); ctx.closePath(); ctx.fill(); break; case 'blackhole': ctx.shadowBlur = 0; for(let i=0; i<10; i++) { ctx.beginPath(); ctx.arc(0, 0, this.radius * (i/10) * (1 + Math.sin(performance.now()/200 + i) * 0.1), 0, Math.PI*2); ctx.strokeStyle = `rgba(150, 50, 255, ${1 - i/10})`; ctx.lineWidth = 2; ctx.stroke(); } break; default: ctx.fillStyle = gameLevel === 1 ? '#5B8FB9' : '#D2122E'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); this.craters.forEach(c => { ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fill(); }); } ctx.restore(); }
         generateAsteroidShape() { const points = []; const pointCount = 8; for (let i = 0; i < pointCount; i++) { const angle = (i / pointCount) * Math.PI * 2; const r = this.radius * (0.7 + Math.random() * 0.6); points.push({x: Math.cos(angle) * r, y: Math.sin(angle) * r}); } return points; }
         generateCraters() { const craters = []; for (let i = 0; i < 5; i++) { const r = this.radius * (0.1 + Math.random() * 0.2); const angle = Math.random() * Math.PI * 2; const dist = Math.random() * (this.radius - r); craters.push({ x: Math.cos(angle) * dist, y: Math.sin(angle) * dist, r: r }); } return craters; }
     }
 
     class Collectible {
-        constructor(x, y, type) {
-            this.x = x;
-            this.y = y;
-            this.type = type;
-            this.radius = type === 'crystal' ? 8 : 12;
-            this.isCollected = false;
-        }
-        draw() {
-            if (this.isCollected) return;
-            ctx.save();
-            ctx.translate(this.x, this.y - cameraY);
-            const pulse = 1 + Math.sin(performance.now() / 200) * 0.2;
-            ctx.shadowBlur = 20;
+        constructor(x, y, type) { this.x = x; this.y = y; this.type = type; this.radius = type === 'crystal' ? 8 : 12; this.isCollected = false; }
+        draw() { if (this.isCollected) return; ctx.save(); ctx.translate(this.x, this.y - cameraY); const pulse = 1 + Math.sin(performance.now() / 200) * 0.2; ctx.shadowBlur = 20; if (this.type === 'crystal') { ctx.shadowColor = '#FFD700'; ctx.fillStyle = '#FFD700'; ctx.rotate(performance.now() / 500); ctx.beginPath(); for (let i = 0; i < 4; i++) { ctx.lineTo(Math.cos(i * Math.PI / 2) * this.radius * pulse, Math.sin(i * Math.PI / 2) * this.radius * pulse); } ctx.closePath(); ctx.fill(); } else if (this.type === 'boost_orb') { ctx.shadowColor = '#00FFFF'; ctx.fillStyle = '#00FFFF'; ctx.beginPath(); ctx.arc(0, 0, this.radius * pulse, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(0, 0, this.radius * 0.5 * pulse, 0, Math.PI * 2); ctx.fill(); } ctx.restore(); }
+    }
 
-            if (this.type === 'crystal') {
-                ctx.shadowColor = '#FFD700';
-                ctx.fillStyle = '#FFD700';
-                ctx.rotate(performance.now() / 500);
-                ctx.beginPath();
-                for (let i = 0; i < 4; i++) {
-                    ctx.lineTo(Math.cos(i * Math.PI / 2) * this.radius * pulse, Math.sin(i * Math.PI / 2) * this.radius * pulse);
-                }
-                ctx.closePath();
-                ctx.fill();
-            } else if (this.type === 'boost_orb') {
-                ctx.shadowColor = '#00FFFF';
-                ctx.fillStyle = '#00FFFF';
-                ctx.beginPath();
-                ctx.arc(0, 0, this.radius * pulse, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.fillStyle = 'rgba(255,255,255,0.8)';
-                ctx.beginPath();
-                ctx.arc(0, 0, this.radius * 0.5 * pulse, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            ctx.restore();
-        }
+    class Wormhole {
+        constructor(x, y) { this.x = x; this.y = y; this.radius = 50; this.isActive = true; }
+        update() { if (!this.isActive) return; const dx = this.x - player.x; const dy = this.y - player.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist < this.radius) { levelUp(); this.isActive = false; } }
+        draw() { if (!this.isActive) return; ctx.save(); ctx.translate(this.x, this.y - cameraY); const time = performance.now(); for (let i = 0; i < 20; i++) { ctx.beginPath(); const radius = this.radius * (i / 20); const angle = time / 500 + i * 0.5; ctx.arc(0, 0, radius, angle, angle + Math.PI * 1.5); ctx.strokeStyle = `hsl(${time / 10 + i * 20}, 100%, 70%)`; ctx.lineWidth = 2; ctx.stroke(); } ctx.restore(); }
     }
 
     class Particle {
@@ -252,6 +227,7 @@
     let player;
     let anchors = [];
     let collectibles = [];
+    let wormhole = null;
     let stars = [];
     let particles = [];
     let lastTime = 0;
@@ -262,9 +238,11 @@
         player = new Player();
         anchors = [];
         collectibles = [];
+        wormhole = null;
         particles = [];
         cameraY = 0;
         score = 0;
+        gameLevel = 1;
         levelReached = 0;
         generateGameObjects(true);
     }
@@ -293,7 +271,6 @@
             
             anchors.push(new Anchor(x, lastAnchorY, radius, type));
 
-            // Spawn collectibles
             if (Math.random() < 0.3) {
                 const collectibleX = Math.random() * (screenWidth - 50) + 25;
                 const collectibleY = lastAnchorY + 75;
@@ -331,6 +308,19 @@
             }
         }
     }
+    
+    function levelUp() {
+        sound.warp();
+        triggerScreenShake(30, 1000);
+        gameLevel++;
+        player.y = cameraY + screenHeight - 50; // Reset player to bottom
+        player.dy = -1; // Give a starting boost
+        anchors = [];
+        collectibles = [];
+        wormhole = null;
+        levelReached++;
+        showLevelUpMessage(`Entering Zone ${gameLevel}!`);
+    }
 
     function gameLoop(timestamp) {
         if (gameState === 'start') {
@@ -344,6 +334,7 @@
 
         player.update(deltaTime);
         anchors.forEach(a => a.update(deltaTime));
+        if (wormhole) wormhole.update();
         particles.forEach(p => p.update(deltaTime));
         checkCollisions();
 
@@ -354,12 +345,12 @@
         if (newScore > score) score = newScore;
         if (score > highScore) { highScore = score; localStorage.setItem('galaxyGrappleHighScore', highScore); }
 
-        if (score > 50 && levelReached < 1) { levelReached = 1; showLevelUpMessage("Bouncy Planets Detected!"); }
-        else if (score > 125 && levelReached < 2) { levelReached = 2; showLevelUpMessage("Warning: Unstable Asteroids!"); }
-        else if (score > 250 && levelReached < 3) { levelReached = 3; showLevelUpMessage("Anomaly: Planets in Motion!"); }
-        else if (score > 400 && levelReached < 4) { levelReached = 4; showLevelUpMessage("DANGER: Black Holes!"); }
-        if (levelUpMessage.timer > 0) levelUpMessage.timer -= deltaTime;
+        if (score > LEVEL_UP_SCORE * gameLevel && !wormhole) {
+            sound.wormholeAppear();
+            wormhole = new Wormhole(screenWidth / 2, cameraY - 50);
+        }
         
+        if (levelUpMessage.timer > 0) levelUpMessage.timer -= deltaTime;
         if (screenShake.duration > 0) { screenShake.duration -= deltaTime; screenShake.x = (Math.random() - 0.5) * screenShake.magnitude; screenShake.y = (Math.random() - 0.5) * screenShake.magnitude; } else { screenShake.x = 0; screenShake.y = 0; }
 
         const cameraTargetY = player.y - screenHeight * 0.4;
@@ -376,6 +367,7 @@
         drawBackground();
         stars.forEach(star => star.draw());
         collectibles.forEach(c => c.draw());
+        if (wormhole) wormhole.draw();
         particles.forEach(p => p.draw());
         anchors.forEach(anchor => anchor.draw());
         player.draw();
@@ -392,7 +384,19 @@
     function createParticleBurst(x, y, count, color, isPulled = false, pullX = 0, pullY = 0) { for (let i = 0; i < count; i++) particles.push(new Particle(x, y, color, isPulled, pullX, pullY)); }
     function triggerScreenShake(magnitude, duration) { screenShake.magnitude = magnitude; screenShake.duration = duration; }
     function lerpColor(a, b, amount) { const ar = a >> 16, ag = a >> 8 & 0xff, ab = a & 0xff, br = b >> 16, bg = b >> 8 & 0xff, bb = b & 0xff, rr = ar + amount * (br - ar), rg = ag + amount * (bg - ag), rb = ab + amount * (bb - ab); return `#${((1 << 24) + (rr << 16) + (rg << 8) + Math.floor(rb) | 0).toString(16).slice(1)}`; }
-    function drawBackground() { let progress = Math.min(1, score / 800); let c1, c2; if (progress < 0.5) { c1 = lerpColor(0x03001C, 0x301E67, progress * 2); c2 = lerpColor(0x301E67, 0x5B8FB9, progress * 2); } else { c1 = lerpColor(0x301E67, 0x4A044E, (progress - 0.5) * 2); c2 = lerpColor(0x5B8FB9, 0xFF6000, (progress - 0.5) * 2); } const gradient = ctx.createLinearGradient(0, 0, 0, screenHeight); gradient.addColorStop(0, c1); gradient.addColorStop(0.5, c2); gradient.addColorStop(1, c1); ctx.fillStyle = gradient; ctx.fillRect(0, 0, screenWidth, screenHeight); }
+    function drawBackground() {
+        let baseColor1 = gameLevel === 1 ? 0x03001C : 0x4A044E;
+        let baseColor2 = gameLevel === 1 ? 0x301E67 : 0xFF6000;
+        let progress = Math.min(1, (score % LEVEL_UP_SCORE) / 800);
+        let c1 = lerpColor(baseColor1, baseColor2, progress);
+        let c2 = lerpColor(baseColor2, 0x5B8FB9, progress);
+        const gradient = ctx.createLinearGradient(0, 0, 0, screenHeight);
+        gradient.addColorStop(0, c1);
+        gradient.addColorStop(0.5, c2);
+        gradient.addColorStop(1, c1);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, screenWidth, screenHeight);
+    }
     function drawStaticBackground() { drawBackground(); stars.forEach(star => star.draw()); }
     findNearestAnchor = function(player) { let nearestAnchor = null; let minDistance = Infinity; anchors.forEach(anchor => { if(anchor.isDestroyed || anchor.type === 'blackhole') return; const dx = anchor.x - player.x; const dy = anchor.y - player.y; const distance = Math.sqrt(dx * dx + dy * dy); if (distance < minDistance) { minDistance = distance; nearestAnchor = anchor; } }); return { anchor: nearestAnchor, distance: minDistance }; };
     resize = function() { screenWidth = Math.min(window.innerWidth, 600); screenHeight = window.innerHeight; canvas.width = screenWidth; canvas.height = screenHeight; stars = []; for(let i=0; i<100; i++) { stars.push(new Star()); } if (gameState === 'start') { drawStaticBackground(); } };
