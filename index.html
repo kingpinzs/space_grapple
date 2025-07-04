@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Galaxy Grapple</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #03001C;
+            font-family: 'Orbitron', sans-serif;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        #gameCanvas {
+            cursor: pointer;
+            display: block;
+        }
+        #uiOverlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            pointer-events: none;
+            text-shadow: 0 0 10px #00BFFF;
+        }
+        #uiOverlay.interactive {
+            pointer-events: all;
+        }
+        .title {
+            font-size: 4rem;
+            font-weight: 900;
+            margin-bottom: 20px;
+            animation: float 3s ease-in-out infinite;
+        }
+        .button {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.5rem;
+            padding: 15px 30px;
+            border: 2px solid #00BFFF;
+            border-radius: 15px;
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            cursor: pointer;
+            transition: background 0.3s, transform 0.3s;
+            animation: pulse 2s infinite;
+        }
+        .button:hover {
+            background: rgba(0, 191, 255, 0.3);
+            transform: scale(1.05);
+        }
+        .instruction {
+            padding: 30px;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #00BFFF;
+            border-radius: 15px;
+            animation: fadeIn 0.5s;
+        }
+        
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 10px #00BFFF; }
+            50% { box-shadow: 0 0 25px #00BFFF; }
+            100% { box-shadow: 0 0 10px #00BFFF; }
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="uiOverlay" class="interactive">
+        <div class="instruction">
+            <h1 class="title">Galaxy Grapple</h1>
+            <button class="button" id="startButton">Start</button>
+        </div>
+    </div>
+
+<script>
+    // =================================================================
+    // GAME SETUP
+    // =================================================================
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const uiOverlay = document.getElementById('uiOverlay');
+    const startButton = document.getElementById('startButton');
+
+    let screenWidth, screenHeight;
+    let gameState = 'start';
+    let score = 0, highScore = localStorage.getItem('galaxyGrappleHighScore') || 0;
+    let cameraY = 0;
+    let screenShake = { x: 0, y: 0, magnitude: 0, duration: 0 };
+
+    // Game constants (v3.1 - Power-Up Update)
+    const GRAVITY = 0.0011;
+    const LAUNCH_POWER = 0.8;
+    const ANCHOR_RADIUS_MIN = 15;
+    const ANCHOR_RADIUS_MAX = 35;
+    const PLAYER_RADIUS = 12;
+    const GRAPPLE_RANGE = 300;
+    const SWING_SPEED_MULTIPLIER = 0.06;
+    const BOOST_DURATION = 700;
+    const BOOST_GRAVITY_MODIFIER = -0.2;
+    const BOUNCY_PLANET_BOOST = 1.35;
+    const UNSTABLE_ASTEROID_LIFETIME = 2500;
+    const BLACK_HOLE_PULL = 0.005;
+    const CRYSTAL_SCORE = 5;
+    const ORB_BOOST_ADDITION = 500; // ms
+
+    // =================================================================
+    // SOUND MANAGER
+    // =================================================================
+    const sound = {
+        ready: false,
+        synth: null,
+        noise: null,
+        polySynth: null,
+        lastPlay: {},
+        cooldown: 50,
+
+        init: function() {
+            this.synth = new Tone.Synth().toDestination();
+            this.noise = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0 } }).toDestination();
+            this.polySynth = new Tone.PolySynth(Tone.Synth).toDestination();
+            this.ready = true;
+        },
+
+        play: function(soundName, action) {
+            if (!this.ready) return;
+            const now = performance.now();
+            if (this.lastPlay[soundName] && now - this.lastPlay[soundName] < this.cooldown) return;
+            this.lastPlay[soundName] = now;
+            try { action(); } catch (e) { console.warn(`Tone.js error:`, e.message); }
+        },
+
+        grapple: function() { this.play('grapple', () => this.synth.triggerAttackRelease("C3", "8n")); },
+        release: function() { this.play('release', () => this.synth.triggerAttackRelease("G4", "16n")); },
+        crumble: function() { this.play('crumble', () => this.noise.triggerAttackRelease("0.1")); },
+        gameOver: function() { this.play('gameOver', () => this.synth.triggerAttackRelease("C2", "1n")); },
+        uiClick: function() { this.play('uiClick', () => this.synth.triggerAttackRelease("C5", "32n")); },
+        collectCrystal: function() { this.play('collect', () => this.polySynth.triggerAttackRelease(["C5", "E5", "G5"], "16n")); },
+        collectOrb: function() { this.play('powerup', () => this.synth.triggerAttackRelease("A5", "8n")); },
+    };
+
+    // =================================================================
+    // GAME OBJECTS
+    // =================================================================
+    class Player {
+        constructor() { this.x = screenWidth / 2; this.y = screenHeight * 0.8; this.radius = PLAYER_RADIUS; this.dx = 0; this.dy = 0; this.state = 'flying'; this.anchor = null; this.swingAngle = 0; this.swingRadius = 0; this.swingDirection = 1; this.isBoosting = false; this.boostTimeRemaining = 0; this.rope = null; }
+        grapple() { if (this.state !== 'flying') return; const nearest = findNearestAnchor(this); if (nearest.anchor && nearest.distance < GRAPPLE_RANGE) { sound.grapple(); this.state = 'swinging'; this.anchor = nearest.anchor; this.anchor.onGrapple(this); this.swingRadius = nearest.distance; this.isBoosting = false; this.boostTimeRemaining = 0; this.swingAngle = Math.atan2(this.y - this.anchor.y, this.x - this.anchor.x); const vecToAnchorX = this.anchor.x - this.x; const vecToAnchorY = this.anchor.y - this.y; const crossProduct = vecToAnchorX * this.dy - vecToAnchorY * this.dx; this.swingDirection = Math.sign(crossProduct) || 1; createParticleBurst(this.anchor.x, this.anchor.y, 10, '#FFFFFF'); this.rope = new Rope(this, this.anchor); } }
+        release(isForced = false) { if (this.state !== 'swinging' && !isForced) return; if (this.state === 'swinging') { sound.release(); const swingSpeed = Math.sqrt(this.dx * this.dx + this.dy * this.dy) || LAUNCH_POWER; const tangentDx = -Math.sin(this.swingAngle); const tangentDy = Math.cos(this.swingAngle); this.dx = tangentDx * swingSpeed * this.swingDirection; this.dy = tangentDy * swingSpeed * this.swingDirection; if (this.anchor && this.anchor.type === 'bouncy') { this.dx *= BOUNCY_PLANET_BOOST; this.dy *= BOUNCY_PLANET_BOOST; createParticleBurst(this.anchor.x, this.anchor.y, 20, '#4CFFB1'); } } if (isForced) { this.dy = -0.3; } this.state = 'flying'; this.anchor = null; this.rope = null; this.isBoosting = true; this.boostTimeRemaining = BOOST_DURATION; }
+        update(deltaTime) { if (this.isBoosting) { this.boostTimeRemaining -= deltaTime; if (this.boostTimeRemaining <= 0) this.isBoosting = false; } if (this.state === 'flying') { const currentGravity = this.isBoosting ? GRAVITY * BOOST_GRAVITY_MODIFIER : GRAVITY; this.dy += currentGravity * deltaTime; this.x += this.dx * deltaTime; this.y += this.dy * deltaTime; } if (this.state === 'swinging') { if (!this.anchor || this.anchor.isDestroyed) { this.release(true); return; } const swingSpeed = (1 / this.swingRadius) * deltaTime * SWING_SPEED_MULTIPLIER; this.swingAngle += swingSpeed * this.swingDirection; this.x = this.anchor.x + Math.cos(this.swingAngle) * this.swingRadius; this.y = this.anchor.y + Math.sin(this.swingAngle) * this.swingRadius; const prevX = this.anchor.x + Math.cos(this.swingAngle - swingSpeed * this.swingDirection) * this.swingRadius; const prevY = this.anchor.y + Math.sin(this.swingAngle - swingSpeed * this.swingDirection) * this.swingRadius; this.dx = (this.x - prevX) / deltaTime; this.dy = (this.y - prevY) / deltaTime; this.rope.update(); } if (this.x < this.radius) this.x = this.radius; if (this.x > screenWidth - this.radius) this.x = screenWidth - this.radius; }
+        draw() { ctx.save(); ctx.translate(this.x, this.y - cameraY); if (this.state === 'swinging' && this.anchor && this.rope) { this.rope.draw(); } const angle = Math.atan2(this.dy, this.dx) + Math.PI / 2; ctx.rotate(angle); const r = this.radius; ctx.fillStyle = '#777'; ctx.beginPath(); ctx.moveTo(-r*0.5, r*0.8); ctx.lineTo(r*0.5, r*0.8); ctx.lineTo(r*0.5, r*1.5); ctx.lineTo(-r*0.5, r*1.5); ctx.closePath(); ctx.fill(); const grad = ctx.createLinearGradient(-r, -r, r, r); grad.addColorStop(0, '#E0E0E0'); grad.addColorStop(1, '#A0A0A0'); ctx.fillStyle = grad; ctx.beginPath(); ctx.moveTo(0, -r * 1.2); ctx.lineTo(r * 0.8, r * 0.6); ctx.lineTo(-r * 0.8, r * 0.6); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#4488FF'; ctx.beginPath(); ctx.arc(0, -r * 0.1, r * 0.4, 0, 2 * Math.PI); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(0, -r * 0.1, r * 0.2, 0, 2 * Math.PI); ctx.fill(); const isThrusting = this.dy < -0.2 || this.isBoosting; if (isThrusting) { const flameLength = this.isBoosting ? r * 2.5 : r * 1.5; const flameWidth = this.isBoosting ? r * 0.7 : r * 0.5; ctx.fillStyle = `rgba(255, 165, 0, ${Math.random() * 0.5 + 0.5})`; ctx.beginPath(); ctx.moveTo(0, r * 0.6); ctx.lineTo(flameWidth, r * 0.6 + flameLength); ctx.lineTo(-flameWidth, r * 0.6 + flameLength); ctx.closePath(); ctx.fill(); } ctx.restore(); }
+    }
+
+    class Rope {
+        constructor(player, anchor) { this.player = player; this.anchor = anchor; this.segments = []; const segmentCount = 10; for (let i = 0; i < segmentCount; i++) { const t = i / (segmentCount - 1); this.segments.push({ x: this.player.x + (this.anchor.x - this.player.x) * t, y: this.player.y + (this.anchor.y - this.player.y) * t, oldX: this.player.x + (this.anchor.x - this.player.x) * t, oldY: this.player.y + (this.anchor.y - this.player.y) * t, }); } }
+        update() { const gravity = 0.5; const stiffness = 0.5; for (let i = 1; i < this.segments.length - 1; i++) { const s = this.segments[i]; const vx = s.x - s.oldX; const vy = s.y - s.oldY; s.oldX = s.x; s.oldY = s.y; s.x += vx; s.y += vy; s.y += gravity; } for (let j = 0; j < 5; j++) { this.segments[0].x = this.player.x; this.segments[0].y = this.player.y; this.segments[this.segments.length - 1].x = this.anchor.x; this.segments[this.segments.length - 1].y = this.anchor.y; for (let i = 0; i < this.segments.length - 1; i++) { const s1 = this.segments[i]; const s2 = this.segments[i + 1]; const dx = s2.x - s1.x; const dy = s2.y - s1.y; const distance = Math.sqrt(dx * dx + dy * dy) || 0.001; const difference = (this.player.swingRadius / (this.segments.length - 1)) - distance; const percent = difference / distance / 2 * stiffness; const offsetX = dx * percent; const offsetY = dy * percent; if (i !== 0) { s1.x -= offsetX; s1.y -= offsetY; } s2.x += offsetX; s2.y += offsetY; } } }
+        draw() { ctx.beginPath(); ctx.moveTo(0, 0); for (let i = 1; i < this.segments.length; i++) { ctx.lineTo(this.segments[i].x - this.player.x, this.segments[i].y - this.player.y); } ctx.strokeStyle = 'rgba(0, 191, 255, 0.3)'; ctx.lineWidth = 10; ctx.lineCap = 'round'; ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, 0); for (let i = 1; i < this.segments.length; i++) { ctx.lineTo(this.segments[i].x - this.player.x, this.segments[i].y - this.player.y); } ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 3; ctx.stroke(); }
+    }
+
+    class Anchor {
+        constructor(x, y, radius, type) { this.x = x; this.y = y; this.radius = radius; this.type = type; this.isTarget = false; this.isDestroyed = false; this.grappleTime = 0; this.movePhase = Math.random() * Math.PI * 2; if (this.type === 'unstable') this.shape = this.generateAsteroidShape(); if (this.type === 'normal') this.craters = this.generateCraters(); }
+        onGrapple(player) { if (this.type === 'unstable') this.grappleTime = performance.now(); }
+        update(deltaTime) { if (this.type === 'unstable' && this.grappleTime > 0) { if (performance.now() - this.grappleTime > UNSTABLE_ASTEROID_LIFETIME) { sound.crumble(); this.isDestroyed = true; createParticleBurst(this.x, this.y, 30, '#A5682A'); triggerScreenShake(10, 200); } } if (this.type === 'moving') { const speedMultiplier = 1 + (score / 2000); this.movePhase += deltaTime * 0.001 * speedMultiplier; this.x += Math.sin(this.movePhase) * 0.05 * deltaTime * speedMultiplier; } if (this.type === 'blackhole') { const dx = this.x - player.x; const dy = this.y - player.y; const dist = Math.sqrt(dx * dx + dy * dy); if (dist < this.radius * 6) { player.dx += (dx / dist) * BLACK_HOLE_PULL; player.dy += (dy / dist) * BLACK_HOLE_PULL; if (Math.random() < 0.2) createParticleBurst(player.x, player.y, 1, '#FFFFFF', true, this.x, this.y); } if (dist < this.radius) { triggerScreenShake(20, 500); player.y = cameraY + screenHeight + 100; } } }
+        draw() { if (this.isDestroyed) return; ctx.save(); ctx.translate(this.x, this.y - cameraY); const pulse = 1 + Math.sin(performance.now() / 150) * 0.1; ctx.shadowColor = this.isTarget ? '#FFFFFF' : '#00BFFF'; ctx.shadowBlur = this.isTarget ? 15 * pulse : 15; switch(this.type) { case 'bouncy': ctx.fillStyle = '#4CFFB1'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(0, 0, this.radius * 0.5, 0, Math.PI * 2); ctx.fill(); break; case 'unstable': ctx.fillStyle = '#A5682A'; const crumbleFactor = this.grappleTime > 0 ? 1 - (performance.now() - this.grappleTime) / UNSTABLE_ASTEROID_LIFETIME : 1; ctx.globalAlpha = crumbleFactor; ctx.translate(Math.random()*4*(1-crumbleFactor), Math.random()*4*(1-crumbleFactor)); ctx.beginPath(); this.shape.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }); ctx.closePath(); ctx.fill(); break; case 'blackhole': ctx.shadowBlur = 0; for(let i=0; i<10; i++) { ctx.beginPath(); ctx.arc(0, 0, this.radius * (i/10) * (1 + Math.sin(performance.now()/200 + i) * 0.1), 0, Math.PI*2); ctx.strokeStyle = `rgba(150, 50, 255, ${1 - i/10})`; ctx.lineWidth = 2; ctx.stroke(); } break; default: ctx.fillStyle = '#5B8FB9'; ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill(); this.craters.forEach(c => { ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fill(); }); } ctx.restore(); }
+        generateAsteroidShape() { const points = []; const pointCount = 8; for (let i = 0; i < pointCount; i++) { const angle = (i / pointCount) * Math.PI * 2; const r = this.radius * (0.7 + Math.random() * 0.6); points.push({x: Math.cos(angle) * r, y: Math.sin(angle) * r}); } return points; }
+        generateCraters() { const craters = []; for (let i = 0; i < 5; i++) { const r = this.radius * (0.1 + Math.random() * 0.2); const angle = Math.random() * Math.PI * 2; const dist = Math.random() * (this.radius - r); craters.push({ x: Math.cos(angle) * dist, y: Math.sin(angle) * dist, r: r }); } return craters; }
+    }
+
+    class Collectible {
+        constructor(x, y, type) {
+            this.x = x;
+            this.y = y;
+            this.type = type;
+            this.radius = type === 'crystal' ? 8 : 12;
+            this.isCollected = false;
+        }
+        draw() {
+            if (this.isCollected) return;
+            ctx.save();
+            ctx.translate(this.x, this.y - cameraY);
+            const pulse = 1 + Math.sin(performance.now() / 200) * 0.2;
+            ctx.shadowBlur = 20;
+
+            if (this.type === 'crystal') {
+                ctx.shadowColor = '#FFD700';
+                ctx.fillStyle = '#FFD700';
+                ctx.rotate(performance.now() / 500);
+                ctx.beginPath();
+                for (let i = 0; i < 4; i++) {
+                    ctx.lineTo(Math.cos(i * Math.PI / 2) * this.radius * pulse, Math.sin(i * Math.PI / 2) * this.radius * pulse);
+                }
+                ctx.closePath();
+                ctx.fill();
+            } else if (this.type === 'boost_orb') {
+                ctx.shadowColor = '#00FFFF';
+                ctx.fillStyle = '#00FFFF';
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius * pulse, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                ctx.beginPath();
+                ctx.arc(0, 0, this.radius * 0.5 * pulse, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+    }
+
+    class Particle {
+        constructor(x, y, color, isPulled = false, pullX = 0, pullY = 0) { this.x = x; this.y = y; this.color = color; this.isPulled = isPulled; this.pullX = pullX; this.pullY = pullY; this.dx = (Math.random() - 0.5) * 0.5; this.dy = (Math.random() - 0.5) * 0.5; this.lifetime = 500 + Math.random() * 300; this.initialLifetime = this.lifetime; this.size = Math.random() * 3 + 1; }
+        update(deltaTime) { if(this.isPulled) { const p_dx = this.pullX - this.x; const p_dy = this.pullY - this.y; const p_dist = Math.sqrt(p_dx*p_dx + p_dy*p_dy); this.dx += (p_dx / p_dist) * 0.1; this.dy += (p_dy / p_dist) * 0.1; } this.x += this.dx * deltaTime; this.y += this.dy * deltaTime; this.lifetime -= deltaTime; this.dx *= 0.99; this.dy *= 0.99; }
+        draw() { ctx.save(); ctx.globalAlpha = Math.max(0, this.lifetime / this.initialLifetime); ctx.fillStyle = this.color; ctx.fillRect(this.x - this.size / 2, this.y - cameraY - this.size / 2, this.size, this.size); ctx.restore(); }
+    }
+
+    class Star {
+        constructor() { this.x = Math.random() * screenWidth; this.y = Math.random() * screenHeight; this.z = Math.random(); }
+        draw() {
+            const size = (1 - this.z) * 3 + 1;
+            const alpha = (1 - this.z) * 0.8;
+            const speedMultiplier = 1 + (score / 1000);
+            let parallaxY = this.y - (cameraY * this.z * speedMultiplier);
+            parallaxY = (parallaxY % screenHeight + screenHeight) % screenHeight;
+            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+            ctx.fillRect(this.x, parallaxY, size, size);
+        }
+    }
+
+    // =================================================================
+    // GAME LOGIC
+    // =================================================================
+    let player;
+    let anchors = [];
+    let collectibles = [];
+    let stars = [];
+    let particles = [];
+    let lastTime = 0;
+    let levelUpMessage = { text: '', timer: 0 };
+    let levelReached = 0;
+
+    function resetGame() {
+        player = new Player();
+        anchors = [];
+        collectibles = [];
+        particles = [];
+        cameraY = 0;
+        score = 0;
+        levelReached = 0;
+        generateGameObjects(true);
+    }
+
+    function generateGameObjects(initial = false) {
+        const topEdge = cameraY;
+        let lastAnchorY = anchors.length > 0 ? anchors[anchors.length - 1].y : player.y;
+
+        while (lastAnchorY > topEdge - screenHeight) {
+            lastAnchorY -= Math.random() * 150 + 120;
+            const x = Math.random() * (screenWidth - 100) + 50;
+            const radius = Math.random() * (ANCHOR_RADIUS_MAX - ANCHOR_RADIUS_MIN) + ANCHOR_RADIUS_MIN;
+            
+            let type = 'normal';
+            const rand = Math.random();
+
+            const blackHoleProb = Math.min(0.15, Math.max(0, (score - 400) / 3000));
+            const movingProb = Math.min(0.20, Math.max(0, (score - 250) / 2500));
+            const unstableProb = Math.min(0.25, Math.max(0, (score - 125) / 2000));
+            const bouncyProb = 0.15;
+
+            if (score > 400 && rand < blackHoleProb) { type = 'blackhole'; }
+            else if (score > 250 && rand < blackHoleProb + movingProb) { type = 'moving'; }
+            else if (score > 125 && rand < blackHoleProb + movingProb + unstableProb) { type = 'unstable'; }
+            else if (score > 50 && rand < blackHoleProb + movingProb + unstableProb + bouncyProb) { type = 'bouncy'; }
+            
+            anchors.push(new Anchor(x, lastAnchorY, radius, type));
+
+            // Spawn collectibles
+            if (Math.random() < 0.3) {
+                const collectibleX = Math.random() * (screenWidth - 50) + 25;
+                const collectibleY = lastAnchorY + 75;
+                collectibles.push(new Collectible(collectibleX, collectibleY, 'crystal'));
+            }
+            if (score > 100 && Math.random() < 0.05) {
+                const collectibleX = Math.random() * (screenWidth - 50) + 25;
+                const collectibleY = lastAnchorY + 75;
+                collectibles.push(new Collectible(collectibleX, collectibleY, 'boost_orb'));
+            }
+        }
+
+        anchors = anchors.filter(anchor => anchor.y < cameraY + screenHeight + 200);
+        collectibles = collectibles.filter(c => c.y < cameraY + screenHeight + 200);
+    }
+
+    function checkCollisions() {
+        for (let i = collectibles.length - 1; i >= 0; i--) {
+            const c = collectibles[i];
+            const dx = c.x - player.x;
+            const dy = c.y - player.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < player.radius + c.radius) {
+                if (c.type === 'crystal') {
+                    score += CRYSTAL_SCORE;
+                    sound.collectCrystal();
+                    createParticleBurst(c.x, c.y, 15, '#FFD700');
+                } else if (c.type === 'boost_orb') {
+                    player.isBoosting = true;
+                    player.boostTimeRemaining += ORB_BOOST_ADDITION;
+                    sound.collectOrb();
+                    createParticleBurst(c.x, c.y, 25, '#00FFFF');
+                }
+                collectibles.splice(i, 1);
+            }
+        }
+    }
+
+    function gameLoop(timestamp) {
+        if (gameState === 'start') {
+            drawStaticBackground();
+            requestAnimationFrame(gameLoop);
+            return;
+        }
+        if (gameState !== 'playing') { requestAnimationFrame(gameLoop); return; }
+        const deltaTime = timestamp - (lastTime || timestamp);
+        lastTime = timestamp;
+
+        player.update(deltaTime);
+        anchors.forEach(a => a.update(deltaTime));
+        particles.forEach(p => p.update(deltaTime));
+        checkCollisions();
+
+        particles = particles.filter(p => p.lifetime > 0);
+        anchors = anchors.filter(a => !a.isDestroyed);
+
+        const newScore = Math.max(0, Math.floor(-cameraY / 100));
+        if (newScore > score) score = newScore;
+        if (score > highScore) { highScore = score; localStorage.setItem('galaxyGrappleHighScore', highScore); }
+
+        if (score > 50 && levelReached < 1) { levelReached = 1; showLevelUpMessage("Bouncy Planets Detected!"); }
+        else if (score > 125 && levelReached < 2) { levelReached = 2; showLevelUpMessage("Warning: Unstable Asteroids!"); }
+        else if (score > 250 && levelReached < 3) { levelReached = 3; showLevelUpMessage("Anomaly: Planets in Motion!"); }
+        else if (score > 400 && levelReached < 4) { levelReached = 4; showLevelUpMessage("DANGER: Black Holes!"); }
+        if (levelUpMessage.timer > 0) levelUpMessage.timer -= deltaTime;
+        
+        if (screenShake.duration > 0) { screenShake.duration -= deltaTime; screenShake.x = (Math.random() - 0.5) * screenShake.magnitude; screenShake.y = (Math.random() - 0.5) * screenShake.magnitude; } else { screenShake.x = 0; screenShake.y = 0; }
+
+        const cameraTargetY = player.y - screenHeight * 0.4;
+        if (cameraTargetY < cameraY) cameraY += (cameraTargetY - cameraY) * 0.05;
+        if (player.y < cameraY + screenHeight * 0.2) generateGameObjects();
+
+        anchors.forEach(a => a.isTarget = false);
+        if (player.state === 'flying') { const nearest = findNearestAnchor(player); if (nearest.anchor && nearest.distance < GRAPPLE_RANGE) nearest.anchor.isTarget = true; }
+
+        if (player.y > cameraY + screenHeight + 50) { sound.gameOver(); gameState = 'gameOver'; showGameOverUI(); }
+
+        ctx.save();
+        ctx.translate(screenShake.x, screenShake.y);
+        drawBackground();
+        stars.forEach(star => star.draw());
+        collectibles.forEach(c => c.draw());
+        particles.forEach(p => p.draw());
+        anchors.forEach(anchor => anchor.draw());
+        player.draw();
+        drawScore();
+        drawLevelUpMessage();
+        ctx.restore();
+
+        requestAnimationFrame(gameLoop);
+    }
+    
+    // =================================================================
+    // UI, CONTROLS & HELPERS
+    // =================================================================
+    function createParticleBurst(x, y, count, color, isPulled = false, pullX = 0, pullY = 0) { for (let i = 0; i < count; i++) particles.push(new Particle(x, y, color, isPulled, pullX, pullY)); }
+    function triggerScreenShake(magnitude, duration) { screenShake.magnitude = magnitude; screenShake.duration = duration; }
+    function lerpColor(a, b, amount) { const ar = a >> 16, ag = a >> 8 & 0xff, ab = a & 0xff, br = b >> 16, bg = b >> 8 & 0xff, bb = b & 0xff, rr = ar + amount * (br - ar), rg = ag + amount * (bg - ag), rb = ab + amount * (bb - ab); return `#${((1 << 24) + (rr << 16) + (rg << 8) + Math.floor(rb) | 0).toString(16).slice(1)}`; }
+    function drawBackground() { let progress = Math.min(1, score / 800); let c1, c2; if (progress < 0.5) { c1 = lerpColor(0x03001C, 0x301E67, progress * 2); c2 = lerpColor(0x301E67, 0x5B8FB9, progress * 2); } else { c1 = lerpColor(0x301E67, 0x4A044E, (progress - 0.5) * 2); c2 = lerpColor(0x5B8FB9, 0xFF6000, (progress - 0.5) * 2); } const gradient = ctx.createLinearGradient(0, 0, 0, screenHeight); gradient.addColorStop(0, c1); gradient.addColorStop(0.5, c2); gradient.addColorStop(1, c1); ctx.fillStyle = gradient; ctx.fillRect(0, 0, screenWidth, screenHeight); }
+    function drawStaticBackground() { drawBackground(); stars.forEach(star => star.draw()); }
+    findNearestAnchor = function(player) { let nearestAnchor = null; let minDistance = Infinity; anchors.forEach(anchor => { if(anchor.isDestroyed || anchor.type === 'blackhole') return; const dx = anchor.x - player.x; const dy = anchor.y - player.y; const distance = Math.sqrt(dx * dx + dy * dy); if (distance < minDistance) { minDistance = distance; nearestAnchor = anchor; } }); return { anchor: nearestAnchor, distance: minDistance }; };
+    resize = function() { screenWidth = Math.min(window.innerWidth, 600); screenHeight = window.innerHeight; canvas.width = screenWidth; canvas.height = screenHeight; stars = []; for(let i=0; i<100; i++) { stars.push(new Star()); } if (gameState === 'start') { drawStaticBackground(); } };
+    function drawScore() {
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(5, 5, screenWidth - 10, 35);
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'left';
+        ctx.font = '20px Orbitron';
+        ctx.fillText(`Score: ${score}`, 15, 30);
+        ctx.textAlign = 'right';
+        ctx.fillText(`High: ${highScore}`, screenWidth - 15, 30);
+    };
+    function showGameOverUI() {
+        uiOverlay.innerHTML = `<div class="instruction"><h1>Game Over</h1><p>Score: ${score}</p><p>High Score: ${highScore}</p><button class="button" id="restartButton">Play Again</button></div>`;
+        uiOverlay.classList.add('interactive');
+        document.getElementById('restartButton').addEventListener('click', handleInput);
+    }
+    function handleInput(e) {
+        if (e) e.preventDefault();
+        if (sound.ready === false) {
+            Tone.start();
+            sound.init();
+        }
+        sound.uiClick();
+
+        if (gameState === 'start' || gameState === 'gameOver') {
+            gameState = 'playing';
+            resetGame();
+            uiOverlay.innerHTML = '';
+            uiOverlay.classList.remove('interactive');
+            lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+        } else if (gameState === 'playing') {
+            if (player.state === 'flying') {
+                player.grapple();
+            } else {
+                player.release();
+            }
+        }
+    }
+    showLevelUpMessage = function(text) { levelUpMessage.text = text; levelUpMessage.timer = 3000; }
+    drawLevelUpMessage = function() { if (levelUpMessage.timer > 0) { ctx.save(); const alpha = Math.min(1, levelUpMessage.timer / 1000); ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`; ctx.font = 'bold 28px Orbitron'; ctx.textAlign = 'center'; ctx.shadowColor = '#00BFFF'; ctx.shadowBlur = 10; ctx.fillText(levelUpMessage.text, screenWidth / 2, screenHeight / 2); ctx.restore(); } }
+
+    // Event Listeners
+    window.addEventListener('resize', resize);
+    canvas.addEventListener('mousedown', handleInput);
+    canvas.addEventListener('touchstart', handleInput);
+    startButton.addEventListener('click', handleInput);
+
+    // Initial setup
+    resize();
+    requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
