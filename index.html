@@ -109,6 +109,7 @@
     let screenWidth, screenHeight;
     let gameState = 'start';
     let score = 0, highScore = localStorage.getItem('galaxyGrappleHighScore') || 0;
+    let scoreOffset = 0;
     let cameraY = 0;
     let screenShake = { x: 0, y: 0, magnitude: 0, duration: 0 };
     let gameLevel = 1;
@@ -244,6 +245,7 @@
         particles = [];
         cameraY = 0;
         score = 0;
+        scoreOffset = 0;
         gameLevel = 1;
         levelReached = 0;
         generateGameObjects(true);
@@ -315,7 +317,9 @@
         sound.warp();
         triggerScreenShake(30, 1000);
         gameLevel++;
-        player.y = cameraY + screenHeight - 50; // Reset player to bottom
+        scoreOffset = score;
+        cameraY = 0;
+        player.y = screenHeight - 50; // Reset player to bottom
         player.dy = -1; // Give a starting boost
         anchors = [];
         collectibles = [];
@@ -344,7 +348,7 @@
         particles = particles.filter(p => p.lifetime > 0);
         anchors = anchors.filter(a => !a.isDestroyed);
 
-        const newScore = Math.max(0, Math.floor(-cameraY / 100));
+        const newScore = scoreOffset + Math.max(0, Math.floor(-cameraY / 100));
         if (newScore > score) score = newScore;
         if (score > highScore) { highScore = score; localStorage.setItem('galaxyGrappleHighScore', highScore); }
 
