@@ -55,4 +55,6 @@ The controls are simple and designed for both desktop and mobile play.
 
     The game will start automatically. Click the "Start" button to begin playing.
 
+    This project now includes Progressive Web App support. When opened in a compatible browser, you can install the game to your home screen for an offline experience.
+
 This project was a collaborative effort, iterating on gameplay, art, and features to create a complete and polished game.
