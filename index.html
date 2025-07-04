@@ -71,6 +71,13 @@
             border-radius: 15px;
             animation: fadeIn 0.5s;
         }
+        .setting {
+            font-size: 1rem;
+            margin: 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
         
         @keyframes float {
             0% { transform: translateY(0px); }
@@ -93,6 +100,7 @@
     <div id="uiOverlay" class="interactive">
         <div class="instruction">
             <h1 class="title">Galaxy Grapple</h1>
+            <label class="setting"><input type="checkbox" id="holdBoostToggle"> Hold to Boost</label>
             <button class="button" id="startButton">Start</button>
         </div>
     </div>
@@ -113,6 +121,8 @@
     let cameraY = 0;
     let screenShake = { x: 0, y: 0, magnitude: 0, duration: 0 };
     let gameLevel = 1;
+    let holdToBoost = false;
+    let pointerDown = false;
 
     // Game constants (v3.2 - The Wormhole Update)
     const GRAVITY = 0.0011;
@@ -176,8 +186,40 @@
     class Player {
         constructor() { this.x = screenWidth / 2; this.y = screenHeight * 0.8; this.radius = PLAYER_RADIUS; this.dx = 0; this.dy = 0; this.state = 'flying'; this.anchor = null; this.swingAngle = 0; this.swingRadius = 0; this.swingDirection = 1; this.isBoosting = false; this.boostTimeRemaining = 0; this.rope = null; }
         grapple() { if (this.state !== 'flying') return; const nearest = findNearestAnchor(this); if (nearest.anchor && nearest.distance < GRAPPLE_RANGE) { sound.grapple(); this.state = 'swinging'; this.anchor = nearest.anchor; this.anchor.onGrapple(this); this.swingRadius = nearest.distance; this.isBoosting = false; this.boostTimeRemaining = 0; this.swingAngle = Math.atan2(this.y - this.anchor.y, this.x - this.anchor.x); const vecToAnchorX = this.anchor.x - this.x; const vecToAnchorY = this.anchor.y - this.y; const crossProduct = vecToAnchorX * this.dy - vecToAnchorY * this.dx; this.swingDirection = Math.sign(crossProduct) || 1; createParticleBurst(this.anchor.x, this.anchor.y, 10, '#FFFFFF'); this.rope = new Rope(this, this.anchor); } }
-        release(isForced = false) { if (this.state !== 'swinging' && !isForced) return; if (this.state === 'swinging') { sound.release(); const swingSpeed = Math.sqrt(this.dx * this.dx + this.dy * this.dy) || LAUNCH_POWER; const tangentDx = -Math.sin(this.swingAngle); const tangentDy = Math.cos(this.swingAngle); this.dx = tangentDx * swingSpeed * this.swingDirection; this.dy = tangentDy * swingSpeed * this.swingDirection; if (this.anchor && this.anchor.type === 'bouncy') { this.dx *= BOUNCY_PLANET_BOOST; this.dy *= BOUNCY_PLANET_BOOST; createParticleBurst(this.anchor.x, this.anchor.y, 20, '#4CFFB1'); } } if (isForced) { this.dy = -0.3; } this.state = 'flying'; this.anchor = null; this.rope = null; this.isBoosting = true; this.boostTimeRemaining = BOOST_DURATION; }
-        update(deltaTime) { if (this.isBoosting) { this.boostTimeRemaining -= deltaTime; if (this.boostTimeRemaining <= 0) this.isBoosting = false; } if (this.state === 'flying') { const currentGravity = this.isBoosting ? GRAVITY * BOOST_GRAVITY_MODIFIER : GRAVITY; this.dy += currentGravity * deltaTime; this.x += this.dx * deltaTime; this.y += this.dy * deltaTime; } if (this.state === 'swinging') { if (!this.anchor || this.anchor.isDestroyed) { this.release(true); return; } const swingSpeed = (1 / this.swingRadius) * deltaTime * SWING_SPEED_MULTIPLIER; this.swingAngle += swingSpeed * this.swingDirection; this.x = this.anchor.x + Math.cos(this.swingAngle) * this.swingRadius; this.y = this.anchor.y + Math.sin(this.swingAngle) * this.swingRadius; const prevX = this.anchor.x + Math.cos(this.swingAngle - swingSpeed * this.swingDirection) * this.swingRadius; const prevY = this.anchor.y + Math.sin(this.swingAngle - swingSpeed * this.swingDirection) * this.swingRadius; this.dx = (this.x - prevX) / deltaTime; this.dy = (this.y - prevY) / deltaTime; this.rope.update(); } if (this.x < this.radius) this.x = this.radius; if (this.x > screenWidth - this.radius) this.x = screenWidth - this.radius; }
+        release(isForced = false) { if (this.state !== 'swinging' && !isForced) return; if (this.state === 'swinging') { sound.release(); const swingSpeed = Math.sqrt(this.dx * this.dx + this.dy * this.dy) || LAUNCH_POWER; const tangentDx = -Math.sin(this.swingAngle); const tangentDy = Math.cos(this.swingAngle); this.dx = tangentDx * swingSpeed * this.swingDirection; this.dy = tangentDy * swingSpeed * this.swingDirection; if (this.anchor && this.anchor.type === 'bouncy') { this.dx *= BOUNCY_PLANET_BOOST; this.dy *= BOUNCY_PLANET_BOOST; createParticleBurst(this.anchor.x, this.anchor.y, 20, '#4CFFB1'); } } if (isForced) { this.dy = -0.3; } this.state = 'flying'; this.anchor = null; this.rope = null; this.boostTimeRemaining = BOOST_DURATION; this.isBoosting = holdToBoost ? false : true; }
+        update(deltaTime) {
+            if (holdToBoost) {
+                if (pointerDown && this.state === 'flying' && this.boostTimeRemaining > 0) {
+                    this.isBoosting = true;
+                } else if (!pointerDown) {
+                    this.isBoosting = false;
+                }
+            }
+            if (this.isBoosting) {
+                this.boostTimeRemaining -= deltaTime;
+                if (this.boostTimeRemaining <= 0) this.isBoosting = false;
+            }
+            if (this.state === 'flying') {
+                const currentGravity = this.isBoosting ? GRAVITY * BOOST_GRAVITY_MODIFIER : GRAVITY;
+                this.dy += currentGravity * deltaTime;
+                this.x += this.dx * deltaTime;
+                this.y += this.dy * deltaTime;
+            }
+            if (this.state === 'swinging') {
+                if (!this.anchor || this.anchor.isDestroyed) { this.release(true); return; }
+                const swingSpeed = (1 / this.swingRadius) * deltaTime * SWING_SPEED_MULTIPLIER;
+                this.swingAngle += swingSpeed * this.swingDirection;
+                this.x = this.anchor.x + Math.cos(this.swingAngle) * this.swingRadius;
+                this.y = this.anchor.y + Math.sin(this.swingAngle) * this.swingRadius;
+                const prevX = this.anchor.x + Math.cos(this.swingAngle - swingSpeed * this.swingDirection) * this.swingRadius;
+                const prevY = this.anchor.y + Math.sin(this.swingAngle - swingSpeed * this.swingDirection) * this.swingRadius;
+                this.dx = (this.x - prevX) / deltaTime;
+                this.dy = (this.y - prevY) / deltaTime;
+                this.rope.update();
+            }
+            if (this.x < this.radius) this.x = this.radius;
+            if (this.x > screenWidth - this.radius) this.x = screenWidth - this.radius;
+        }
         draw() { ctx.save(); ctx.translate(this.x, this.y - cameraY); if (this.state === 'swinging' && this.anchor && this.rope) { this.rope.draw(); } const angle = Math.atan2(this.dy, this.dx) + Math.PI / 2; ctx.rotate(angle); const r = this.radius; ctx.fillStyle = '#777'; ctx.beginPath(); ctx.moveTo(-r*0.5, r*0.8); ctx.lineTo(r*0.5, r*0.8); ctx.lineTo(r*0.5, r*1.5); ctx.lineTo(-r*0.5, r*1.5); ctx.closePath(); ctx.fill(); const grad = ctx.createLinearGradient(-r, -r, r, r); grad.addColorStop(0, '#E0E0E0'); grad.addColorStop(1, '#A0A0A0'); ctx.fillStyle = grad; ctx.beginPath(); ctx.moveTo(0, -r * 1.2); ctx.lineTo(r * 0.8, r * 0.6); ctx.lineTo(-r * 0.8, r * 0.6); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#4488FF'; ctx.beginPath(); ctx.arc(0, -r * 0.1, r * 0.4, 0, 2 * Math.PI); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(0, -r * 0.1, r * 0.2, 0, 2 * Math.PI); ctx.fill(); const isThrusting = this.dy < -0.2 || this.isBoosting; if (isThrusting) { const flameLength = this.isBoosting ? r * 2.5 : r * 1.5; const flameWidth = this.isBoosting ? r * 0.7 : r * 0.5; ctx.fillStyle = `rgba(255, 165, 0, ${Math.random() * 0.5 + 0.5})`; ctx.beginPath(); ctx.moveTo(0, r * 0.6); ctx.lineTo(flameWidth, r * 0.6 + flameLength); ctx.lineTo(-flameWidth, r * 0.6 + flameLength); ctx.closePath(); ctx.fill(); } ctx.restore(); }
     }
 
@@ -250,6 +292,8 @@
         scoreOffset = 0;
         gameLevel = 1;
         levelReached = 0;
+        pointerDown = false;
+        holdToBoost = document.getElementById('holdBoostToggle')?.checked || false;
         generateGameObjects(true);
     }
 
@@ -389,6 +433,7 @@
         anchors.forEach(anchor => anchor.draw());
         player.draw();
         drawScore();
+        drawBoostMeter();
         drawLevelUpMessage();
         ctx.restore();
 
@@ -427,27 +472,48 @@
         ctx.textAlign = 'right';
         ctx.fillText(`High: ${highScore}`, screenWidth - 15, 30);
     };
+    function drawBoostMeter() {
+        const ratio = Math.max(0, player.boostTimeRemaining / BOOST_DURATION);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(5, 45, 110, 20);
+        ctx.fillStyle = '#00FFFF';
+        ctx.fillRect(10, 50, 100 * ratio, 10);
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.strokeRect(10, 50, 100, 10);
+    }
     function showGameOverUI() {
         uiOverlay.innerHTML = `<div class="instruction"><h1>Game Over</h1><p>Score: ${score}</p><p>High Score: ${highScore}</p><button class="button" id="restartButton">Play Again</button></div>`;
         uiOverlay.classList.add('interactive');
-        document.getElementById('restartButton').addEventListener('click', handleInput);
+        document.getElementById('restartButton').addEventListener('click', startGame);
     }
-    function handleInput(e) {
+
+    function startGame(e) {
         if (e) e.preventDefault();
         if (sound.ready === false) {
             Tone.start();
             sound.init();
         }
         sound.uiClick();
+        gameState = 'playing';
+        holdToBoost = document.getElementById('holdBoostToggle')?.checked || false;
+        resetGame();
+        uiOverlay.innerHTML = '';
+        uiOverlay.classList.remove('interactive');
+        lastTime = performance.now();
+        requestAnimationFrame(gameLoop);
+    }
 
-        if (gameState === 'start' || gameState === 'gameOver') {
-            gameState = 'playing';
-            resetGame();
-            uiOverlay.innerHTML = '';
-            uiOverlay.classList.remove('interactive');
-            lastTime = performance.now();
-            requestAnimationFrame(gameLoop);
-        } else if (gameState === 'playing') {
+    function pointerDownHandler(e) {
+        if (e) e.preventDefault();
+        if (gameState === 'start' || gameState === 'gameOver') return startGame(e);
+        pointerDown = true;
+        if (holdToBoost) {
+            if (player.state === 'swinging') {
+                player.release();
+            } else if (player.state === 'flying') {
+                player.grapple();
+            }
+        } else {
             if (player.state === 'flying') {
                 player.grapple();
             } else {
@@ -455,14 +521,24 @@
             }
         }
     }
+
+    function pointerUpHandler(e) {
+        if (e) e.preventDefault();
+        pointerDown = false;
+        if (holdToBoost) {
+            player.isBoosting = false;
+        }
+    }
     showLevelUpMessage = function(text) { levelUpMessage.text = text; levelUpMessage.timer = 3000; }
     drawLevelUpMessage = function() { if (levelUpMessage.timer > 0) { ctx.save(); const alpha = Math.min(1, levelUpMessage.timer / 1000); ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`; ctx.font = 'bold 28px Orbitron'; ctx.textAlign = 'center'; ctx.shadowColor = '#00BFFF'; ctx.shadowBlur = 10; ctx.fillText(levelUpMessage.text, screenWidth / 2, screenHeight / 2); ctx.restore(); } }
 
     // Event Listeners
     window.addEventListener('resize', resize);
-    canvas.addEventListener('mousedown', handleInput);
-    canvas.addEventListener('touchstart', handleInput);
-    startButton.addEventListener('click', handleInput);
+    canvas.addEventListener('mousedown', pointerDownHandler);
+    canvas.addEventListener('touchstart', pointerDownHandler);
+    canvas.addEventListener('mouseup', pointerUpHandler);
+    canvas.addEventListener('touchend', pointerUpHandler);
+    startButton.addEventListener('click', startGame);
 
     // Initial setup
     resize();
