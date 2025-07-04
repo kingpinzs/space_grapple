@@ -142,6 +142,7 @@
     const CRYSTAL_SCORE = 5;
     const ORB_BOOST_ADDITION = 500;
     const LEVEL_UP_SCORE = 500;
+    const MIN_ANCHORS = 200;
 
     // =================================================================
     // SOUND MANAGER
@@ -301,7 +302,7 @@
         const topEdge = cameraY;
         let lastAnchorY = anchors.length > 0 ? anchors[anchors.length - 1].y : player.y;
 
-        while (lastAnchorY > topEdge - screenHeight * 1.5) {
+        while (lastAnchorY > topEdge - screenHeight * 1.5 || anchors.length < MIN_ANCHORS) {
             lastAnchorY -= Math.random() * (ANCHOR_GAP_MAX - ANCHOR_GAP_MIN) + ANCHOR_GAP_MIN;
             const x = Math.random() * (screenWidth - 100) + 50;
             const radius = Math.random() * (ANCHOR_RADIUS_MAX - ANCHOR_RADIUS_MIN) + ANCHOR_RADIUS_MIN;
