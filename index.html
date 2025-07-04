@@ -121,6 +121,8 @@
     const ANCHOR_RADIUS_MAX = 35;
     const PLAYER_RADIUS = 12;
     const GRAPPLE_RANGE = 300;
+    const ANCHOR_GAP_MIN = 80;
+    const ANCHOR_GAP_MAX = 180;
     const SWING_SPEED_MULTIPLIER = 0.06;
     const BOOST_DURATION = 700;
     const BOOST_GRAVITY_MODIFIER = -0.2;
@@ -255,8 +257,8 @@
         const topEdge = cameraY;
         let lastAnchorY = anchors.length > 0 ? anchors[anchors.length - 1].y : player.y;
 
-        while (lastAnchorY > topEdge - screenHeight) {
-            lastAnchorY -= Math.random() * 150 + 120;
+        while (lastAnchorY > topEdge - screenHeight * 1.5) {
+            lastAnchorY -= Math.random() * (ANCHOR_GAP_MAX - ANCHOR_GAP_MIN) + ANCHOR_GAP_MIN;
             const x = Math.random() * (screenWidth - 100) + 50;
             const radius = Math.random() * (ANCHOR_RADIUS_MAX - ANCHOR_RADIUS_MIN) + ANCHOR_RADIUS_MIN;
             
