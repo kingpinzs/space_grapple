@@ -121,7 +121,7 @@
     const ANCHOR_RADIUS_MAX = 35;
     const PLAYER_RADIUS = 12;
     const GRAPPLE_RANGE = 300;
-    const ANCHOR_GAP_MIN = 80;
+    const ANCHOR_GAP_MIN = 150;
     const ANCHOR_GAP_MAX = 180;
     const SWING_SPEED_MULTIPLIER = 0.06;
     const BOOST_DURATION = 700;
@@ -367,7 +367,12 @@
 
         const cameraTargetY = player.y - screenHeight * 0.4;
         if (cameraTargetY < cameraY) cameraY += (cameraTargetY - cameraY) * 0.05;
-        if (player.y < cameraY + screenHeight * 0.2) generateGameObjects();
+        
+        // BUG FIX: More robust generation trigger
+        let highestAnchorY = anchors.length > 0 ? anchors.reduce((min, a) => a.y < min ? a.y : min, 0) : player.y;
+        if (highestAnchorY > cameraY) {
+            generateGameObjects();
+        }
 
         anchors.forEach(a => a.isTarget = false);
         if (player.state === 'flying') { const nearest = findNearestAnchor(player); if (nearest.anchor && nearest.distance < GRAPPLE_RANGE) nearest.anchor.isTarget = true; }
