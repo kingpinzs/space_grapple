@@ -1,4 +1,5 @@
-const CACHE_NAME = 'galaxy-grapple-v1';
+// Update the cache name to invalidate old caches on new deployments
+const CACHE_NAME = 'galaxy-grapple-v2';
 const URLS_TO_CACHE = [
   './',
   './index.html',
