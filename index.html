@@ -155,6 +155,7 @@
         reverb: null,
         bgSynth: null,
         bgLoop: null,
+        melodyLoop: null,
         lastPlay: {},
         cooldown: 50,
 
@@ -164,11 +165,24 @@
             this.polySynth = new Tone.PolySynth(Tone.Synth).toDestination();
             this.reverb = new Tone.Reverb({ decay: 8, preDelay: 0.5, wet: 0.6 }).toDestination();
             this.bgSynth = new Tone.PolySynth(Tone.Synth).connect(this.reverb);
-            const notes = ['A3', 'C4', 'E4', 'G3'];
+
+            const chords = [
+                ['A3', 'C4', 'E4'],
+                ['F3', 'A3', 'C4'],
+                ['G3', 'B3', 'D4'],
+                ['E3', 'G3', 'B3']
+            ];
+            let chordIndex = 0;
             this.bgLoop = new Tone.Loop(time => {
-                const note = notes[Math.floor(Math.random() * notes.length)];
-                this.bgSynth.triggerAttackRelease(note, '2n', time);
-            }, '2n');
+                this.bgSynth.triggerAttackRelease(chords[chordIndex], '1n', time);
+                chordIndex = (chordIndex + 1) % chords.length;
+            }, '1n');
+
+            const melodyNotes = ['A4', 'C5', 'E5', 'G4', 'B4', 'D5'];
+            this.melodyLoop = new Tone.Loop(time => {
+                const note = melodyNotes[Math.floor(Math.random() * melodyNotes.length)];
+                this.bgSynth.triggerAttackRelease(note, '8n', time);
+            }, '8n');
             Tone.Transport.bpm.value = 60;
             this.ready = true;
         },
@@ -178,6 +192,9 @@
             if (this.bgLoop && this.bgLoop.state !== 'started') {
                 this.bgLoop.start(0);
             }
+            if (this.melodyLoop && this.melodyLoop.state !== 'started') {
+                this.melodyLoop.start(0);
+            }
             if (Tone.Transport.state !== 'started') {
                 Tone.Transport.start();
             }
@@ -185,6 +202,7 @@
 
         stopMusic: function() {
             if (this.bgLoop) this.bgLoop.stop();
+            if (this.melodyLoop) this.melodyLoop.stop();
         },
 
         play: function(soundName, action) {
