@@ -218,8 +218,8 @@
                 this.dy = (this.y - prevY) / deltaTime;
                 this.rope.update();
             }
-            if (this.x < this.radius) this.x = this.radius;
-            if (this.x > screenWidth - this.radius) this.x = screenWidth - this.radius;
+            if (this.x < this.radius) { this.x = this.radius; this.dx = 0; }
+            if (this.x > screenWidth - this.radius) { this.x = screenWidth - this.radius; this.dx = 0; }
         }
         draw() { ctx.save(); ctx.translate(this.x, this.y - cameraY); if (this.state === 'swinging' && this.anchor && this.rope) { this.rope.draw(); } const angle = Math.atan2(this.dy, this.dx) + Math.PI / 2; ctx.rotate(angle); const r = this.radius; ctx.fillStyle = '#777'; ctx.beginPath(); ctx.moveTo(-r*0.5, r*0.8); ctx.lineTo(r*0.5, r*0.8); ctx.lineTo(r*0.5, r*1.5); ctx.lineTo(-r*0.5, r*1.5); ctx.closePath(); ctx.fill(); const grad = ctx.createLinearGradient(-r, -r, r, r); grad.addColorStop(0, '#E0E0E0'); grad.addColorStop(1, '#A0A0A0'); ctx.fillStyle = grad; ctx.beginPath(); ctx.moveTo(0, -r * 1.2); ctx.lineTo(r * 0.8, r * 0.6); ctx.lineTo(-r * 0.8, r * 0.6); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#4488FF'; ctx.beginPath(); ctx.arc(0, -r * 0.1, r * 0.4, 0, 2 * Math.PI); ctx.fill(); ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.beginPath(); ctx.arc(0, -r * 0.1, r * 0.2, 0, 2 * Math.PI); ctx.fill(); const isThrusting = this.dy < -0.2 || this.isBoosting; if (isThrusting) { const flameLength = this.isBoosting ? r * 2.5 : r * 1.5; const flameWidth = this.isBoosting ? r * 0.7 : r * 0.5; ctx.fillStyle = `rgba(255, 165, 0, ${Math.random() * 0.5 + 0.5})`; ctx.beginPath(); ctx.moveTo(0, r * 0.6); ctx.lineTo(flameWidth, r * 0.6 + flameLength); ctx.lineTo(-flameWidth, r * 0.6 + flameLength); ctx.closePath(); ctx.fill(); } ctx.restore(); }
     }
