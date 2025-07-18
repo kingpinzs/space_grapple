@@ -45,7 +45,7 @@ The controls are simple and designed for both desktop and mobile play.
 
         Boost Orbs: Instantly refill and extend your post-release boost.
 
-    Polished Visuals & Audio: Features particle effects, screen shake, dynamic backgrounds, and a full suite of sound effects built with Tone.js.
+    Polished Visuals & Audio: Features particle effects, screen shake, dynamic backgrounds, and a full suite of sound effects built with Tone.js. The game now also includes ghostly ambient background music for extra atmosphere.
 
 🛠️ How to Run
 
