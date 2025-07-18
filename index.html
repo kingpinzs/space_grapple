@@ -152,6 +152,9 @@
         synth: null,
         noise: null,
         polySynth: null,
+        reverb: null,
+        bgSynth: null,
+        bgLoop: null,
         lastPlay: {},
         cooldown: 50,
 
@@ -159,7 +162,29 @@
             this.synth = new Tone.Synth().toDestination();
             this.noise = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.005, decay: 0.1, sustain: 0 } }).toDestination();
             this.polySynth = new Tone.PolySynth(Tone.Synth).toDestination();
+            this.reverb = new Tone.Reverb({ decay: 8, preDelay: 0.5, wet: 0.6 }).toDestination();
+            this.bgSynth = new Tone.PolySynth(Tone.Synth).connect(this.reverb);
+            const notes = ['A3', 'C4', 'E4', 'G3'];
+            this.bgLoop = new Tone.Loop(time => {
+                const note = notes[Math.floor(Math.random() * notes.length)];
+                this.bgSynth.triggerAttackRelease(note, '2n', time);
+            }, '2n');
+            Tone.Transport.bpm.value = 60;
             this.ready = true;
+        },
+
+        startMusic: function() {
+            if (!this.ready) return;
+            if (this.bgLoop && this.bgLoop.state !== 'started') {
+                this.bgLoop.start(0);
+            }
+            if (Tone.Transport.state !== 'started') {
+                Tone.Transport.start();
+            }
+        },
+
+        stopMusic: function() {
+            if (this.bgLoop) this.bgLoop.stop();
         },
 
         play: function(soundName, action) {
@@ -491,6 +516,7 @@
         uiOverlay.innerHTML = `<div class="instruction"><h1>Game Over</h1><p>Score: ${score}</p><p>High Score: ${highScore}</p><button class="button" id="restartButton">Play Again</button></div>`;
         uiOverlay.classList.add('interactive');
         document.getElementById('restartButton').addEventListener('click', startGame);
+        sound.stopMusic();
     }
 
     function startGame(e) {
@@ -500,6 +526,7 @@
             sound.init();
         }
         sound.uiClick();
+        sound.startMusic();
         gameState = 'playing';
         holdToBoost = document.getElementById('holdBoostToggle')?.checked || false;
         resetGame();
