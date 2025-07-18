@@ -142,7 +142,7 @@
     const CRYSTAL_SCORE = 5;
     const ORB_BOOST_ADDITION = 500;
     const LEVEL_UP_SCORE = 500;
-    const MIN_ANCHORS = 500;
+    const MIN_ANCHORS = 200;
 
     // =================================================================
     // SOUND MANAGER
@@ -363,6 +363,11 @@
     function levelUp() {
         sound.warp();
         triggerScreenShake(30, 1000);
+        // Ensure the player is no longer attached to a previous anchor
+        // before repositioning for the next zone. If the player was still
+        // swinging when the wormhole triggered, their old anchor would
+        // persist and cause a visual glitch.
+        player.release(true);
         gameLevel++;
         scoreOffset = score;
         cameraY = 0;
